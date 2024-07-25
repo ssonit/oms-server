@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  consul:
+    image: hashicorp/consul
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    ports:
+      - 8500:8500
+      - 8600:8600/udp
+  orders-mongo:
+    image: "mongo:7.0.8"
+    restart: always
+    environment:
+      - MONGO_INITDB_DATABASE=${MONGO_DB_ORDERS}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_DB_USERNAME_ORDERS}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_DB_PASSWORD_ORDERS}
+    ports:
+      - 27017:27017
+
+  mongo-express:
+    image: "mongo-express"
+    restart: always
+    ports:
+      - 8082:8081
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: admin
+      ME_CONFIG_MONGODB_URL: mongodb://admin:admin@orders-mongo:27017/
+      ME_CONFIG_BASICAUTH: false
