@@ -2,21 +2,27 @@ package grpc_handler
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
-	pb "github.com/ssonit/common/protos/order"
 	"github.com/ssonit/oms-orders/utils"
 	"google.golang.org/grpc"
+
+	kafka "github.com/segmentio/kafka-go"
+	pb "github.com/ssonit/common/protos/order"
 )
 
 type grpcHandler struct {
 	pb.UnimplementedOrderServiceServer
 
-	service utils.OrdersService
+	service       utils.OrdersService
+	kafkaProducer *kafka.Writer
 }
 
-func NewGRPCHandler(grpcServer *grpc.Server, service utils.OrdersService) {
+func NewGRPCHandler(grpcServer *grpc.Server, service utils.OrdersService, kafkaProducer *kafka.Writer) {
 	handler := &grpcHandler{
-		service: service,
+		service:       service,
+		kafkaProducer: kafkaProducer,
 	}
 	pb.RegisterOrderServiceServer(grpcServer, handler)
 }
@@ -31,6 +37,21 @@ func (h *grpcHandler) CreateOrder(ctx context.Context, p *pb.CreateOrderRequest)
 	if err != nil {
 		return nil, err
 	}
+
+	jsonBody, _ := json.Marshal(order)
+
+	msg := kafka.Message{
+		Key:   []byte(order.Id),
+		Value: jsonBody,
+	}
+
+	fmt.Println("Sending message to Kafka")
+	err = h.kafkaProducer.WriteMessages(ctx, msg)
+
+	if err != nil {
+		return nil, err
+	}
+
 	return order, nil
 
 }

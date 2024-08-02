@@ -12,6 +12,7 @@ import (
 	"github.com/ssonit/common"
 	"github.com/ssonit/common/discovery"
 	"github.com/ssonit/common/discovery/consul"
+	"github.com/ssonit/common/kafka"
 	"github.com/ssonit/oms-orders/biz"
 	"github.com/ssonit/oms-orders/storage"
 	"github.com/ssonit/oms-orders/utils"
@@ -31,6 +32,7 @@ var (
 	mongoUser        = common.EnvConfig("MONGO_DB_USERNAME", "root")
 	mongoPass        = common.EnvConfig("MONGO_DB_PASSWORD", "admin")
 	mongoAddr        = common.EnvConfig("MONGO_DB_HOST", "localhost:27017")
+	kafkaAddr        = common.EnvConfig("KAFKA_ADDR", "localhost:9092")
 )
 
 func connectMongoDB(uri string) (*mongo.Client, error) {
@@ -46,13 +48,31 @@ func connectMongoDB(uri string) (*mongo.Client, error) {
 	return client, err
 }
 
+func consumerOrders(id string) {
+	reader := kafka.GetKafkaReader(kafkaAddr, kafka.OrderCreatedEvent, id)
+	defer reader.Close()
+
+	fmt.Printf("Consumer %s is listening on topic %s\n", id, kafka.OrderCreatedEvent)
+
+	for {
+		m, err := reader.ReadMessage(context.Background())
+		if err != nil {
+			fmt.Printf("Error reading message %s and error: %v", id, err)
+		}
+
+		fmt.Printf("Consumer %s received message: %s, partition: %v, offset: %v\n", id, string(m.Value), m.Partition, m.Offset)
+	}
+}
+
 func main() {
 
+	// Initialize logger
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
 	zap.ReplaceGlobals(logger)
 
+	// Register service with consul
 	registry, err := consul.NewRegistry(consulAddr, serviceName)
 	if err != nil {
 		panic(err)
@@ -75,6 +95,7 @@ func main() {
 
 	defer registry.Deregister(ctx, instanceID, serviceName)
 
+	// Create a new gRPC server
 	grpcServer := grpc.NewServer()
 
 	lis, err := net.Listen("tcp", orderServiceAddr)
@@ -84,6 +105,7 @@ func main() {
 
 	defer lis.Close()
 
+	// Connect to MongoDB
 	uri := fmt.Sprintf("mongodb://%s:%s@%s", mongoUser, mongoPass, mongoAddr)
 	fmt.Println(uri)
 	mongoClient, err := connectMongoDB(uri)
@@ -91,14 +113,23 @@ func main() {
 		logger.Fatal("failed to connect to mongo db", zap.Error(err))
 	}
 
+	// Initialize kafka producer
+	kafkaProducer := kafka.GetKafkaWriter(kafkaAddr, kafka.OrderCreatedEvent)
+	defer kafkaProducer.Close()
+
+	// Initialize service
 	store := storage.NewStore(mongoClient)
 	service := biz.NewService(store)
 	serviceWithLogging := utils.NewLoggingMiddleware(service)
 
-	grpcHandler.NewGRPCHandler(grpcServer, serviceWithLogging)
+	grpcHandler.NewGRPCHandler(grpcServer, serviceWithLogging, kafkaProducer)
 
 	logger.Info("Server grpc listening on ", zap.String("port", orderServiceAddr))
 
+	go consumerOrders("1")
+	go consumerOrders("2")
+
+	// Start the server
 	if err := grpcServer.Serve(lis); err != nil {
 		logger.Fatal("Failed to start server", zap.Error(err))
 	}

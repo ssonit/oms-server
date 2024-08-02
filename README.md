@@ -1,5 +1,10 @@
+## Setup project
+
 go mod init [name]
+
 go work init ./common
+
+## Run project
 
 go run .
 
