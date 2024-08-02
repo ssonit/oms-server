@@ -36,6 +36,6 @@ func GetKafkaReader(kafkaURL, topic, groupID string) *kafka.Reader {
 		MinBytes:       10e3, // 10KB
 		MaxBytes:       10e6, // 10MB
 		CommitInterval: time.Second,
-		StartOffset:    kafka.FirstOffset,
+		StartOffset:    kafka.LastOffset,
 	})
 }

@@ -49,7 +49,8 @@ func connectMongoDB(uri string) (*mongo.Client, error) {
 }
 
 func consumerOrders(id string) {
-	reader := kafka.GetKafkaReader(kafkaAddr, kafka.OrderCreatedEvent, id)
+	groupId := fmt.Sprintf("group-%s", id)
+	reader := kafka.GetKafkaReader(kafkaAddr, kafka.OrderCreatedEvent, groupId)
 	defer reader.Close()
 
 	fmt.Printf("Consumer %s is listening on topic %s\n", id, kafka.OrderCreatedEvent)
@@ -128,6 +129,7 @@ func main() {
 
 	go consumerOrders("1")
 	go consumerOrders("2")
+	go consumerOrders("3")
 
 	// Start the server
 	if err := grpcServer.Serve(lis); err != nil {
